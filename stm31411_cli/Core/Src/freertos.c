@@ -100,7 +100,7 @@ void ledSystemTask(void *argument);
 void tempSystemTask(void *argument);
 void monitorSystemTask(void *argument);
 void armSystemTask(void *argument);
-void vTaskLoadCell(void *argument);
+void loadCellSystemTask(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -147,7 +147,7 @@ void MX_FREERTOS_Init(void) {
   myTaskArmHandle = osThreadNew(armSystemTask, NULL, &myTaskArm_attributes);
 
   /* creation of LoadCellTask */
-  LoadCellTaskHandle = osThreadNew(vTaskLoadCell, NULL, &LoadCellTask_attributes);
+  LoadCellTaskHandle = osThreadNew(loadCellSystemTask, NULL, &LoadCellTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -250,22 +250,22 @@ __weak void armSystemTask(void *argument)
   /* USER CODE END armSystemTask */
 }
 
-/* USER CODE BEGIN Header_vTaskLoadCell */
+/* USER CODE BEGIN Header_loadCellSystemTask */
 /**
 * @brief Function implementing the LoadCellTask thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_vTaskLoadCell */
-__weak void vTaskLoadCell(void *argument)
+/* USER CODE END Header_loadCellSystemTask */
+__weak void loadCellSystemTask(void *argument)
 {
-  /* USER CODE BEGIN vTaskLoadCell */
+  /* USER CODE BEGIN loadCellSystemTask */
   /* Infinite loop */
   for(;;)
   {
     osDelay(1);
   }
-  /* USER CODE END vTaskLoadCell */
+  /* USER CODE END loadCellSystemTask */
 }
 
 /* Private application code --------------------------------------------------*/
