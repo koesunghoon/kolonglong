@@ -14,6 +14,6 @@ void apInit(void);
 void apMain(void);
 void apStopAutoTask(void);
 void armSystemTask(void *argument);
-void vTaskLoadCell(void *argument);
+void loadCellSystemTask(void *argument);
 
 #endif //__AP_AP_H_

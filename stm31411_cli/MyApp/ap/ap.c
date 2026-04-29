@@ -251,8 +251,8 @@ void cliLoadCell(uint8_t argc, char **argv)
     else { cliPrintf("Unknown command\r\n"); }
 }
 
-/* ── FreeRTOS Task: vTaskLoadCell ────────────────────────── */
-void vTaskLoadCell(void *argument)
+/* ── FreeRTOS Task: loadCellSystemTask ──────────────────── */
+void loadCellSystemTask(void *argument)
 {
     int32_t  prev_raw          = 0;
     int32_t  raw               = 0;
