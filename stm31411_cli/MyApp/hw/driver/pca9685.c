@@ -30,16 +30,12 @@ void pca9685SetAngle(uint8_t ch, float angle) {
 
     uint16_t min_tick, max_tick;
 
-    if (ch == 3) {
-        // MG996R - 80도가 실제 90도
+    if (ch == 4 || ch == 5) {
+        // MG996R
         min_tick = 150;
         max_tick = 560;
-    } else if (ch == 4) {
-        // MG996R - 50도가 실제 90도
-        min_tick = 150;
-        max_tick = 480;
     } else {
-        // AD002 (ch 0, 1, 2)
+        // AD002 (ch 0, 1, 2, 3)
         min_tick = 115;
         max_tick = 490;
     }

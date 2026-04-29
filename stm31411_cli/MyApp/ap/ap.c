@@ -338,40 +338,44 @@ static volatile bool arm_running = false;
 
 void robotArmTask(void) {
     if (!arm_running) return;
-
-    // 1. 집게 열고
-    pca9685SetAngleSmoothDual(0, 0, 1, 0, 1000);
+    
+// 1. 집게 열고
+    pca9685SetAngleSmoothDual(0, 0, 1, 0, 1500);
     if (!arm_running) return;
 
-    // 2. 팔 내리고
-    pca9685SetAngleSmooth(2, 120, 1000);
+    // 2. 고개 초기화
+    pca9685SetAngleSmooth(2, 90 , 1500);
+    if (!arm_running) return;
+    
+    // 3. 팔 내리고
+    pca9685SetAngleSmooth(3, 140, 1500);
     if (!arm_running) return;
 
-    // 3. 어깨 내리고
-    pca9685SetAngleSmooth(3, 0, 1000);
+    // 4. 어깨 내리고
+    pca9685SetAngleSmooth(4, 0, 1500);
     if (!arm_running) return;
 
-    // 4. 집게 닫고
-    pca9685SetAngleSmoothDual(0, 120, 1, 120, 1000);
+    // 5. 집게 닫고
+    pca9685SetAngleSmoothDual(0, 120, 1, 120, 1500);
     if (!arm_running) return;
 
-    // 5. 어깨 올리고
-    pca9685SetAngleSmooth(3, 80, 1000);
+    // 6. 어깨 올리고
+    pca9685SetAngleSmooth(4, 80, 1500);
     if (!arm_running) return;
 
-    // 6. 허리 돌리고
-    pca9685SetAngleSmooth(4, 120, 1000);
+    // 7. 허리 돌리고
+    pca9685SetAngleSmooth(5, 140, 1500);
     if (!arm_running) return;
 
-    // 7. 어깨 내리고
-    pca9685SetAngleSmooth(3, 0, 1000);
+    // 8. 어깨 내리고
+    pca9685SetAngleSmooth(4, 0, 1500);
     if (!arm_running) return;
 
-    // 8. 집게 열고
-    pca9685SetAngleSmoothDual(0, 0, 1, 0, 1000);
+    // 9. 집게 열고
+    pca9685SetAngleSmoothDual(0, 0, 1, 0, 1500);
 
-    // 9. 허리 원위치
-    pca9685SetAngleSmooth(4, 80, 1000);
+    // 10. 허리 원위치
+    pca9685SetAngleSmooth(5, 55, 1500);
 }
 
 void cliArm(uint8_t argc, char **argv) {
