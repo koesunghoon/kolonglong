@@ -1,7 +1,64 @@
 #include "ap.h"
+#include "pca9685.h"
 
 
 
+
+static volatile bool arm_running = false;
+
+void robotArmTask(void) {
+    if (!arm_running) return;
+
+    // 1. 집게 열고
+    pca9685SetAngleSmoothDual(0, 0, 1, 0, 1000);
+    if (!arm_running) return;
+
+    // 2. 팔 내리고
+    pca9685SetAngleSmooth(2, 120, 1000);
+    if (!arm_running) return;
+
+    // 3. 어깨 내리고
+    pca9685SetAngleSmooth(3, 0, 1000);
+    if (!arm_running) return;
+
+    // 4. 집게 닫고
+    pca9685SetAngleSmoothDual(0, 120, 1, 120, 1000);
+    if (!arm_running) return;
+
+    // 5. 어깨 올리고
+    pca9685SetAngleSmooth(3, 80, 1000);
+    if (!arm_running) return;
+
+    // 6. 허리 돌리고
+    pca9685SetAngleSmooth(4, 120, 1000);
+    if (!arm_running) return;
+
+    // 7. 어깨 내리고
+    pca9685SetAngleSmooth(3, 0, 1000);
+    if (!arm_running) return;
+
+    // 8. 집게 열고
+    pca9685SetAngleSmoothDual(0, 0, 1, 0, 1000);
+
+    // 9. 허리 원위치 ← 추가
+    pca9685SetAngleSmooth(4, 80, 1000);
+  }
+
+void cliArm(uint8_t argc, char **argv) {
+    if (argc == 2) {
+        if (strcmp(argv[1], "start") == 0) {
+            arm_running = true;
+            cliPrintf("Arm Started\r\n");
+        } else if (strcmp(argv[1], "stop") == 0) {
+            arm_running = false;
+            cliPrintf("Arm Stopped\r\n");
+        } else {
+            cliPrintf("Usage: arm [start/stop]\r\n");
+        }
+    } else {
+        cliPrintf("Usage: arm [start/stop]\r\n");
+    }
+}
 
 
 // button on/off  => enable/disable
@@ -383,6 +440,18 @@ void apSyncPeriods(uint32_t period){
   }
 }
 
+void armSystemTask(void *argument) {
+  LOG_INF("armSystemTask started!");
+    while (1) {
+        if (arm_running) {
+            LOG_INF("arm running!");
+            robotArmTask();
+        } else {
+            osDelay(50);
+        }
+    }
+}
+
 void apInit(void)
 {
   
@@ -403,18 +472,25 @@ void apInit(void)
   cliAdd("md", cliMd);
   cliAdd("button", cliButton);
   cliAdd("temp", cliTemp);
+   cliAdd("arm", cliArm);  // ← 추가
 
   if (pca9685Init() == true)
       LOG_INF("PCA9685 Init OK");
   else
       LOG_INF("PCA9685 Init FAIL");
+
+      extern osThreadId_t myTaskArmHandle;
+  if (myTaskArmHandle != NULL)
+      LOG_INF("Arm task handle OK");
+  else
+      LOG_INF("Arm task handle NULL - creation FAILED");
 }
 void apMain(void)
 {
-  
   uartPrintf(0, "LED Task Started!!\r\n");
   while (1)
   {
     cliMain();
+    osDelay(1);  // ← 이거 추가, 다른 task에게 CPU 양보
   }
 }

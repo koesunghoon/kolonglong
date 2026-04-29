@@ -146,7 +146,7 @@ static void processAnsiEscape(uint8_t rx_data)
 void cliMain(void)
 {
     uint8_t rx_data;
-    if (uartReadBlock(0, &rx_data, osWaitForever) == true) {
+    if (uartReadBlock(0, &rx_data, 0) == true) {  // 0 = 즉시 리턴
       if (input_state != CLI_STATE_NORMAL) {
         processAnsiEscape(rx_data);
         return;
@@ -208,28 +208,23 @@ if  (HAL_I2C_IsDeviceReady(&hi2c1, addr << 1, 1, 10) == HAL_OK)
     cliPrintf("Done\r\n");
 }
 
+// cli.c cliServo 함수 수정
 static void cliServo(uint8_t argc, char **argv)
 {
-  // servo [ch] [angle]
-  if (argc == 3)
-  {
-    uint8_t ch    = (uint8_t)atoi(argv[1]);
-    float   angle = (float)atof(argv[2]);
-
-    if (ch < 16)
-    {
-      pca9685SetAngle(ch, angle);
-      cliPrintf("Servo Ch %d set to %.1f degree\r\n", ch, angle);
+    if (argc == 3) {
+        uint8_t ch    = (uint8_t)atoi(argv[1]);
+        float   angle = (float)atof(argv[2]);
+        pca9685SetAngleSmooth(ch, angle, 500); // 500ms에 걸쳐 이동
     }
-    else
-    {
-      cliPrintf("Channel Range Error (0~15)\r\n");
+    else if (argc == 4) {
+        uint8_t  ch       = (uint8_t)atoi(argv[1]);
+        float    angle    = (float)atof(argv[2]);
+        uint16_t duration = (uint16_t)atoi(argv[3]);
+        pca9685SetAngleSmooth(ch, angle, duration);
     }
-  }
-  else
-  {
-    cliPrintf("Usage: servo [ch] [angle]\r\n");
-  }
+    else {
+        cliPrintf("Usage: servo [ch] [angle] (duration_ms)\r\n");
+    }
 }
 
 void cliInit()

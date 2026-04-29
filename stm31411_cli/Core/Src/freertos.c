@@ -76,6 +76,14 @@ const osThreadAttr_t myTaskMonitor_attributes = {
   .priority = (osPriority_t) osPriorityLow,
 };
 
+/* Definitions for myTaskArm */
+osThreadId_t myTaskArmHandle;
+const osThreadAttr_t myTaskArm_attributes = {
+  .name = "myTaskArm",
+  .stack_size = 1024 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
+
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
 
@@ -85,6 +93,7 @@ void StartDefaultTask(void *argument);
 void ledSystemTask(void *argument);
 void tempSystemTask(void *argument);
 void monitorSystemTask(void *argument);
+void armSystemTask(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -126,6 +135,26 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of myTaskMonitor */
   myTaskMonitorHandle = osThreadNew(monitorSystemTask, NULL, &myTaskMonitor_attributes);
+
+  /* creation of myTaskArm */
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  myTaskArmHandle = osThreadNew(armSystemTask, NULL, &myTaskArm_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -208,6 +237,24 @@ __weak void monitorSystemTask(void *argument)
     osDelay(1);
   }
   /* USER CODE END monitorSystemTask */
+}
+
+/* USER CODE BEGIN Header_armSystemTask */
+/**
+* @brief Function implementing the myTaskArm thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_armSystemTask */
+__weak void armSystemTask(void *argument)
+{
+  /* USER CODE BEGIN armSystemTask */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END armSystemTask */
 }
 
 /* Private application code --------------------------------------------------*/
