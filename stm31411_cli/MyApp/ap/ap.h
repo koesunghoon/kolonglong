@@ -6,6 +6,7 @@
 #include "hw.h"
 #include "monitor.h"
 #include "pca9685.h"
+#include "conveyor_belt.h"
 
 
 void apInit(void);

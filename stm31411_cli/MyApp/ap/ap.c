@@ -357,7 +357,113 @@ void StartDefaultTask(void *argument)
   
 }
 
+/* ================================================================
+ * Conveyor CLI
+ *
+ * conv start [speed] [dir]   speed: 1~4 / dir: f(orward)|b(ackward)
+ * conv stop
+ * conv speed [1~4]
+ * conv dir
+ * conv status
+ *
+ * 예시:
+ *   conv start 2 f     → MEDIUM 속도 전진
+ *   conv start 3 b     → FAST 속도 후진
+ *   conv speed 4       → TURBO로 속도 변경
+ *   conv dir           → 방향 반전
+ *   conv stop          → 정지
+ *   conv status        → 현재 상태 출력
+ * ================================================================ */
+void cliConveyor(uint8_t argc, char **argv)
+{
+  if (argc < 2)
+  {
+    cliPrintf("Usage: conv start [speed 1~4] [f|b]\r\n");
+    cliPrintf("       conv stop\r\n");
+    cliPrintf("       conv speed [1~4]\r\n");
+    cliPrintf("       conv dir\r\n");
+    cliPrintf("       conv status\r\n");
+    return;
+  }
+ 
+  /* conv stop */
+  if (strcmp(argv[1], "stop") == 0)
+  {
+    Conveyor_Stop();
+    cliPrintf("Conveyor: STOPPED\r\n");
+    LOG_INF("Conveyor stopped");
+  }
+ 
+  /* conv start [speed] [dir] */
+  else if (strcmp(argv[1], "start") == 0)
+  {
+    ConveyorSpeed_t spd = CONVEYOR_MEDIUM;
+    ConveyorDir_t   dir = CONVEYOR_DIR_FORWARD;
+ 
+    if (argc >= 3)
+    {
+      int s = atoi(argv[2]);
+      if (s >= 1 && s <= 4) spd = (ConveyorSpeed_t)s;
+      else { cliPrintf("Speed must be 1~4\r\n"); return; }
+    }
+    if (argc >= 4)
+    {
+      if (argv[3][0] == 'b' || argv[3][0] == 'B')
+        dir = CONVEYOR_DIR_BACKWARD;
+    }
+ 
+    Conveyor_Start(spd, dir);
+    cliPrintf("Conveyor: START  speed=%d  dir=%s\r\n",
+              spd, (dir == CONVEYOR_DIR_FORWARD) ? "FORWARD" : "BACKWARD");
+    LOG_INF("Conveyor started spd=%d dir=%d", spd, dir);
+  }
+ 
+  /* conv speed [1~4] */
+  else if (strcmp(argv[1], "speed") == 0)
+  {
+    if (argc < 3) { cliPrintf("Usage: conv speed [1~4]\r\n"); return; }
+    int s = atoi(argv[2]);
+    if (s < 1 || s > 4) { cliPrintf("Speed must be 1~4\r\n"); return; }
+    Conveyor_SetSpeed((ConveyorSpeed_t)s);
+    cliPrintf("Conveyor: speed set to %d\r\n", s);
+  }
+ 
+  /* conv dir  (토글) */
+  else if (strcmp(argv[1], "dir") == 0)
+  {
+    Conveyor_ToggleDirection();
+    const ConveyorState_t *st = Conveyor_GetState();
+    cliPrintf("Conveyor: direction -> %s\r\n",
+              (st->direction == CONVEYOR_DIR_FORWARD) ? "FORWARD" : "BACKWARD");
+  }
+ 
+  /* conv status */
+  else if (strcmp(argv[1], "status") == 0)
+  {
+    const ConveyorState_t *st = Conveyor_GetState();
+    cliPrintf("---- Conveyor Status ----\r\n");
+    cliPrintf("  Running  : %s\r\n",  st->running   ? "YES" : "NO");
+    cliPrintf("  Speed    : %d\r\n",  st->speed);
+    cliPrintf("  Dir      : %s\r\n",  (st->direction == CONVEYOR_DIR_FORWARD) ? "FORWARD" : "BACKWARD");
+    cliPrintf("  Pulse    : %lu us\r\n", st->pulse_us);
+    cliPrintf("-------------------------\r\n");
+  }
 
+  /* conv pulse [us] */
+  else if (strcmp(argv[1], "pulse") == 0)
+  {
+      if (argc < 3) { cliPrintf("Usage: conv pulse [500~2500]\r\n"); return; }
+      uint32_t us = (uint32_t)atoi(argv[2]);
+      Conveyor_SetPulse(us);
+      cliPrintf("Pulse set to %lu us\r\n", us);
+  }
+ 
+  else
+  {
+    cliPrintf("Unknown command. Try: conv start/stop/speed/dir/status\r\n");
+  }
+
+}
 
 void ledSystemTask(void *argument)
 {
@@ -425,6 +531,7 @@ void apStopAutoTask(void){
   temp_read_period=0;
   tempStopAuto();
   ledOff();
+  Conveyor_Stop();  // 시스템 정지 시 컨베이어도 함께 정지
 }
 
 void apSyncPeriods(uint32_t period){
@@ -460,6 +567,7 @@ void apInit(void)
 
   logInit();
   monitorInit();
+  Conveyor_Init();
  
   monitorSetSyncHandler(apSyncPeriods);
   cliSetCtrlHandler(apStopAutoTask);
@@ -472,7 +580,8 @@ void apInit(void)
   cliAdd("md", cliMd);
   cliAdd("button", cliButton);
   cliAdd("temp", cliTemp);
-   cliAdd("arm", cliArm);  // ← 추가
+  cliAdd("arm", cliArm);  // ← 추가
+  cliAdd("conv",   cliConveyor); // 컨베이어 CLI 등록
 
   if (pca9685Init() == true)
       LOG_INF("PCA9685 Init OK");

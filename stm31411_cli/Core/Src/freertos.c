@@ -75,7 +75,6 @@ const osThreadAttr_t myTaskMonitor_attributes = {
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
-
 /* Definitions for myTaskArm */
 osThreadId_t myTaskArmHandle;
 const osThreadAttr_t myTaskArm_attributes = {
@@ -137,23 +136,6 @@ void MX_FREERTOS_Init(void) {
   myTaskMonitorHandle = osThreadNew(monitorSystemTask, NULL, &myTaskMonitor_attributes);
 
   /* creation of myTaskArm */
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
   myTaskArmHandle = osThreadNew(armSystemTask, NULL, &myTaskArm_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
