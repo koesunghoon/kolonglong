@@ -632,80 +632,27 @@ void StartDefaultTask(void *argument)
  * ================================================================ */
 void cliConveyor(uint8_t argc, char **argv)
 {
-  if (argc < 2)
-  {
-    cliPrintf("Usage: conv start [speed 1~4] [f|b]\r\n");
-    cliPrintf("       conv stop\r\n");
-    cliPrintf("       conv speed [1~4]\r\n");
-    cliPrintf("       conv dir\r\n");
-    cliPrintf("       conv status\r\n");
-    return;
-  }
-
-  if (strcmp(argv[1], "stop") == 0)
-  {
-    Conveyor_Stop();
-    cliPrintf("Conveyor: STOPPED\r\n");
-    LOG_INF("Conveyor stopped");
-  }
-  else if (strcmp(argv[1], "start") == 0)
-  {
-    ConveyorSpeed_t spd = CONVEYOR_MEDIUM;
-    ConveyorDir_t   dir = CONVEYOR_DIR_FORWARD;
-
-    if (argc >= 3)
+    if (argc < 2)
     {
-      int s = atoi(argv[2]);
-      if (s >= 1 && s <= 4) spd = (ConveyorSpeed_t)s;
-      else { cliPrintf("Speed must be 1~4\r\n"); return; }
-    }
-    if (argc >= 4)
-    {
-      if (argv[3][0] == 'b' || argv[3][0] == 'B')
-        dir = CONVEYOR_DIR_BACKWARD;
+        cliPrintf("Usage: conv start\r\n");
+        cliPrintf("       conv stop\r\n");
+        return;
     }
 
-    Conveyor_Start(spd, dir);
-    cliPrintf("Conveyor: START  speed=%d  dir=%s\r\n",
-              spd, (dir == CONVEYOR_DIR_FORWARD) ? "FORWARD" : "BACKWARD");
-    LOG_INF("Conveyor started spd=%d dir=%d", spd, dir);
-  }
-  else if (strcmp(argv[1], "speed") == 0)
-  {
-    if (argc < 3) { cliPrintf("Usage: conv speed [1~4]\r\n"); return; }
-    int s = atoi(argv[2]);
-    if (s < 1 || s > 4) { cliPrintf("Speed must be 1~4\r\n"); return; }
-    Conveyor_SetSpeed((ConveyorSpeed_t)s);
-    cliPrintf("Conveyor: speed set to %d\r\n", s);
-  }
-  else if (strcmp(argv[1], "dir") == 0)
-  {
-    Conveyor_ToggleDirection();
-    const ConveyorState_t *st = Conveyor_GetState();
-    cliPrintf("Conveyor: direction -> %s\r\n",
-              (st->direction == CONVEYOR_DIR_FORWARD) ? "FORWARD" : "BACKWARD");
-  }
-  else if (strcmp(argv[1], "status") == 0)
-  {
-    const ConveyorState_t *st = Conveyor_GetState();
-    cliPrintf("---- Conveyor Status ----\r\n");
-    cliPrintf("  Running  : %s\r\n",  st->running   ? "YES" : "NO");
-    cliPrintf("  Speed    : %d\r\n",  st->speed);
-    cliPrintf("  Dir      : %s\r\n",  (st->direction == CONVEYOR_DIR_FORWARD) ? "FORWARD" : "BACKWARD");
-    cliPrintf("  Pulse    : %lu us\r\n", st->pulse_us);
-    cliPrintf("-------------------------\r\n");
-  }
-  else if (strcmp(argv[1], "pulse") == 0)
-  {
-    if (argc < 3) { cliPrintf("Usage: conv pulse [500~2500]\r\n"); return; }
-    uint32_t us = (uint32_t)atoi(argv[2]);
-    Conveyor_SetPulse(us);
-    cliPrintf("Pulse set to %lu us\r\n", us);
-  }
-  else
-  {
-    cliPrintf("Unknown command. Try: conv start/stop/speed/dir/status\r\n");
-  }
+    if (strcmp(argv[1], "start") == 0)
+    {
+        Conveyor_Start(CONVEYOR_SLOW, CONVEYOR_DIR_BACKWARD);
+        cliPrintf("Conveyor: START (pulse=1250)\r\n");
+    }
+    else if (strcmp(argv[1], "stop") == 0)
+    {
+        Conveyor_Stop();
+        cliPrintf("Conveyor: STOP\r\n");
+    }
+    else
+    {
+        cliPrintf("Usage: conv [start|stop]\r\n");
+    }
 }
 
 void ledSystemTask(void *argument)
@@ -806,6 +753,7 @@ void apInit(void)
   cliAdd("arm",       cliArm);
   cliAdd("conv",      cliConveyor);
   cliAdd("loadcell",  cliLoadCell);   /* ← LoadCell CLI 추가 */
+  cliAdd("flag", cliFlag);
 
   if (pca9685Init() == true)
       LOG_INF("PCA9685 Init OK");

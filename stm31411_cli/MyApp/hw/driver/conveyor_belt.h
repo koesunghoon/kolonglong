@@ -44,6 +44,16 @@ typedef struct {
     uint32_t        pulse_us;   /* 현재 PWM 펄스 폭 (us) */
 } ConveyorState_t;
 
+/* ── 깃발 서보 ── */
+typedef enum { FLAG_LEFT = 0, FLAG_CENTER = 1, FLAG_RIGHT = 2 } FlagPos_t;
+
+void      Flag_Init(void);
+void      Flag_SetLeft(void);
+void      Flag_SetRight(void);
+void      Flag_SetCenter(void);
+FlagPos_t Flag_GetPos(void);
+void      cliFlag(uint8_t argc, char **argv);
+
 /* ============================================================
  * Public API
  * ============================================================ */
