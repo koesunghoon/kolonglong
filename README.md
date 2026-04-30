@@ -14,6 +14,7 @@
 ![C++](https://img.shields.io/badge/C++-00599C?style=flat-square&logo=cplusplus&logoColor=white)
 ![Git](https://img.shields.io/badge/Git-F05032?style=flat-square&logo=git&logoColor=white)
 ![GitHub](https://img.shields.io/badge/GitHub-181717?style=flat-square&logo=github&logoColor=white)
+![STM32](https://img.shields.io/badge/GitHub-03234B?style=flat-square&logo=stm32&logoColor=white) 
 
 ## ✨ 주요 기능 (Key Features)
 * **정밀 무게 측정**: 로드셀 및 AD002 변환 모듈을 활용한 데이터 수집
