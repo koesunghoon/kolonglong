@@ -11,10 +11,10 @@
 #define HX711_READY_TIMEOUT_MS     500
 
 /* 하드코딩 기준값 — loadcell rawtare 로 확인 후 교체 */
-#define DEFAULT_TARE_OFFSET        (-583800)
+#define DEFAULT_TARE_OFFSET        (-5757)
 
 /* 캘리브레이션 계수 */
-#define SCALE_FACTOR_DEFAULT       40.09f
+#define SCALE_FACTOR_DEFAULT       50.46f
 
 /* 데드밴드 */
 #define DEADBAND_GRAM              2.0f
