@@ -89,6 +89,13 @@ const osThreadAttr_t LoadCellTask_attributes = {
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityAboveNormal,
 };
+/* Definitions for systemSysTask */
+osThreadId_t systemSysTaskHandle;
+const osThreadAttr_t systemSysTask_attributes = {
+  .name = "systemSysTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -101,6 +108,7 @@ void tempSystemTask(void *argument);
 void monitorSystemTask(void *argument);
 void armSystemTask(void *argument);
 void loadCellSystemTask(void *argument);
+void systemTask(void *argument);
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -148,6 +156,9 @@ void MX_FREERTOS_Init(void) {
 
   /* creation of LoadCellTask */
   LoadCellTaskHandle = osThreadNew(loadCellSystemTask, NULL, &LoadCellTask_attributes);
+
+  /* creation of systemSysTask */
+  systemSysTaskHandle = osThreadNew(systemTask, NULL, &systemSysTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -266,6 +277,24 @@ __weak void loadCellSystemTask(void *argument)
     osDelay(1);
   }
   /* USER CODE END loadCellSystemTask */
+}
+
+/* USER CODE BEGIN Header_systemTask */
+/**
+* @brief Function implementing the systemSysTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_systemTask */
+__weak void systemTask(void *argument)
+{
+  /* USER CODE BEGIN systemTask */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END systemTask */
 }
 
 /* Private application code --------------------------------------------------*/

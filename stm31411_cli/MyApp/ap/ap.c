@@ -1,4 +1,5 @@
 #include "ap.h"
+#include <math.h>
 #include "pca9685.h"
 
 /* ═══════════════════════════════════════════════════════════
@@ -31,11 +32,15 @@
 #define STABLE_COUNT               5
 #define STABLE_THRESH_G            2.0f
 
-/* raw 안정 판단 임계값 */
-#define RAW_STABLE_THRESH          300
+/* 히스테리시스 — 물체 감지/해제 기준 */
+#define OBJECT_DETECT_G            25.0f   /* 이 값 이상이면 물체 올라왔다고 판단 */
+#define OBJECT_RELEASE_G           12.0f   /* 이 값 이하로 떨어지면 물체 제거됐다고 판단 */
 
-/* 자동 tare 주기 (ms) */
-#define AUTO_TARE_INTERVAL_MS      5000
+/* Zero tracking */
+#define ZERO_TRACK_LIMIT_G         15.0f   /* 이 값 이하일 때만 zero tracking 동작 */
+#define ZERO_TRACK_STABLE_G         1.0f   /* 직전 무게와 변화량이 이 이하일 때만 동작 */
+#define ZERO_TRACK_ALPHA            0.02f  /* offset 따라가는 속도 (작을수록 느리게) */
+#define ZERO_TRACK_RELEASE_WAIT_MS  3000   /* 물체 해제 후 대기 시간 (ms) */
 
 /* ── 전역 상태 ───────────────────────────────────────────── */
 static volatile int32_t  g_tare_offset         = DEFAULT_TARE_OFFSET;
@@ -95,9 +100,9 @@ static float adaptiveEma(int32_t new_raw)
 }
 
 /* ── 안정화 감지 ─────────────────────────────────────────── */
-static float   g_stable_last   = 0.0f;
-static uint8_t g_stable_count  = 0;
-static float   g_stable_weight = 0.0f;
+volatile float   g_stable_last   = 0.0f;
+volatile uint8_t g_stable_count  = 0;
+volatile float   g_stable_weight = 0.0f;
 
 static void updateStable(float weight)
 {
@@ -252,33 +257,63 @@ void cliLoadCell(uint8_t argc, char **argv)
 }
 
 /* ── FreeRTOS Task: loadCellSystemTask ──────────────────── */
+/* ── 분류 기준 ───────────────────────────────────────────── */
+#define CLASSIFY_HEAVY_G           60.0f   /* 이 값 이상 → 무거운 물체 (FLAG LEFT) */
+
+/* ── 컨베이어 동작 시간 ──────────────────────────────────── */
+#define CONVEYOR_RUN_MS            3000    /* 물체가 플래그 통과할 시간 — 수정 가능 */
+
+/* ── 시스템 상태머신 ─────────────────────────────────────── */
+typedef enum {
+    STATE_WAIT_OBJECT,      /* 로드셀에 물건 올라오길 대기 */
+    STATE_MEASURING,        /* 무게 측정 중 (stable 확정 대기) */
+    STATE_ARM_MOVING,       /* 로봇팔 동작 중 */
+    STATE_CONVEYOR_RUNNING, /* 컨베이어 동작 중 */
+    STATE_DONE,             /* 분류 완료, 초기화 후 대기로 복귀 */
+    STATE_IDLE,             /* 시스템 정지 (system off) */
+} SystemState_t;
+
+static volatile SystemState_t g_system_state   = STATE_IDLE;
+static volatile bool          g_system_enabled = false;  /* system on/off */
+
+/* ── 세마포어: 로봇팔 완료 트리거 ───────────────────────── */
+osSemaphoreId_t g_arm_done_sem = NULL;
+
+/* ── arm_running 플래그 ──────────────────────────────────── */
+volatile bool arm_running = false;
+
+/* ── 측정 결과 공유 변수 (systemTask가 읽음) ─────────────── */
+volatile bool  g_object_present = false;   /* 히스테리시스 상태 */
+
+/* ================================================================
+ *  loadCellSystemTask  —  측정 전용
+ *  raw → 필터 → stable → 히스테리시스 → zero tracking
+ * ================================================================ */
 void loadCellSystemTask(void *argument)
 {
-    int32_t  prev_raw          = 0;
-    int32_t  raw               = 0;
-    bool     obj_ever_detected = false;
-    bool     tare_done         = false;
-    uint32_t no_obj_start_ms   = 0;
+    int32_t  raw             = 0;
+    uint32_t release_time_ms = 0;
+    float    prev_weight_g   = 0.0f;
 
     hx711Init(HX711_GAIN_128);
     LOG_INF("HX711 Init OK");
 
     osDelay(500);
     runTare();
-    prev_raw        = g_tare_offset;
-    no_obj_start_ms = osKernelGetTickCount();
 
     for (;;)
     {
+        /* ── 수동 tare 요청 처리 ──────────────────────────── */
         if (g_tare_request)
         {
-            g_tare_request    = false;
+            g_tare_request   = false;
             runTare();
-            prev_raw          = g_tare_offset;
-            tare_done         = true;
-            obj_ever_detected = false;
+            g_object_present = false;
+            release_time_ms  = 0;
+            prev_weight_g    = 0.0f;
         }
 
+        /* ── raw 읽기 ─────────────────────────────────────── */
         if (!readRaw(&raw))
         {
             LOG_WRN("HX711 timeout");
@@ -286,60 +321,173 @@ void loadCellSystemTask(void *argument)
             continue;
         }
 
-        int32_t delta = raw - prev_raw;
-        if (delta < 0) delta = -delta;
-        prev_raw = raw;
-
+        /* ── 필터 파이프라인 ──────────────────────────────── */
         float weight = calcWeight(raw);
         updateStable(weight);
 
-        bool obj_detected = (g_stable_weight > DEADBAND_GRAM);
-
-        if (obj_detected)
+        /* ── 히스테리시스: 물체 감지/해제 ───────────────── */
+        if (!g_object_present)
         {
-            obj_ever_detected = true;
-            tare_done         = false;
-            no_obj_start_ms   = 0;
+            if (g_stable_weight >= OBJECT_DETECT_G)
+            {
+                g_object_present = true;
+                release_time_ms  = 0;
+                cliPrintf("[LC] 물체 감지: %.2f g\r\n", g_stable_weight);
+            }
         }
         else
         {
-            if (no_obj_start_ms == 0)
-                no_obj_start_ms = osKernelGetTickCount();
-
-            uint32_t elapsed = osKernelGetTickCount() - no_obj_start_ms;
-
-            if (obj_ever_detected &&
-                !tare_done &&
-                (delta < RAW_STABLE_THRESH) &&
-                (elapsed >= AUTO_TARE_INTERVAL_MS))
+            if (g_stable_weight <= OBJECT_RELEASE_G)
             {
-                cliPrintf("[AutoTare] 자동 tare 실행\r\n");
-                runTare();
-                prev_raw  = g_tare_offset;
-                tare_done = true;
+                g_object_present = false;
+                release_time_ms  = osKernelGetTickCount();
+                cliPrintf("[LC] 물체 제거 감지\r\n");
             }
         }
 
-        if (g_loadcell_auto_print)
+        /* ── Zero Tracking ────────────────────────────────── */
+        if (!g_object_present && release_time_ms != 0)
         {
-            cliPrintf("[LoadCell] raw=%ld  weight=%.2f g\r\n",
-                      (long)raw, g_stable_weight);
+            uint32_t elapsed = osKernelGetTickCount() - release_time_ms;
+
+            if (elapsed >= ZERO_TRACK_RELEASE_WAIT_MS &&
+                fabsf(g_stable_weight)                 < ZERO_TRACK_LIMIT_G &&
+                fabsf(g_stable_weight - prev_weight_g) < ZERO_TRACK_STABLE_G)
+            {
+                int32_t filtered_raw = (int32_t)g_ema_value;
+                g_tare_offset = (int32_t)(
+                    (1.0f - ZERO_TRACK_ALPHA) * (float)g_tare_offset +
+                    ZERO_TRACK_ALPHA          * (float)filtered_raw
+                );
+            }
         }
 
+        /* ── 자동 출력 ────────────────────────────────────── */
+        if (g_loadcell_auto_print || g_system_enabled)
+            cliPrintf("[LoadCell] raw=%ld  weight=%.2f g\r\n",
+                      (long)raw, g_stable_weight);
+
+        prev_weight_g = g_stable_weight;
         osDelay(LOADCELL_TASK_PERIOD_MS);
     }
 }
 
-/* ═══════════════════════════════════════════════════════════
- *  이하 기존 ap.c 코드 100% 유지
- * ═══════════════════════════════════════════════════════════ */
+/* ================================================================
+ *  systemTask  —  상태머신 전용 (분류 흐름 조율)
+ * ================================================================ */
+void systemTask(void *argument)
+{
+    float    measured_weight   = 0.0f;
+    uint32_t conveyor_start_ms = 0;
 
-static volatile bool arm_running = false;
+    /* loadCellSystemTask 초기화 대기 */
+    osDelay(1000);
+
+    g_system_state = STATE_IDLE;
+    cliPrintf("[SYS] systemTask started — 'system on' 으로 시작\r\n");
+
+    for (;;)
+    {
+        /* system off 상태면 아무것도 안 함 */
+        if (!g_system_enabled)
+        {
+            g_system_state = STATE_IDLE;
+            osDelay(100);
+            continue;
+        }
+
+        switch (g_system_state)
+        {
+            /* system on 직후 진입점 */
+            case STATE_IDLE:
+                g_system_state = STATE_WAIT_OBJECT;
+                cliPrintf("[SYS] -> WAIT_OBJECT\r\n");
+                break;
+            /* ── 물체 올라오길 대기 ───────────────────────── */
+            case STATE_WAIT_OBJECT:
+                if (g_object_present)
+                {
+                    g_stable_count = 0;   /* 측정 시작 전 카운트 리셋 */
+                    cliPrintf("[SYS] -> MEASURING\r\n");
+                    g_system_state = STATE_MEASURING;
+                }
+                break;
+
+            /* ── stable 확정 대기 ─────────────────────────── */
+            case STATE_MEASURING:
+                if (!g_object_present)
+                {
+                    cliPrintf("[SYS] 측정 중 물체 제거 -> WAIT\r\n");
+                    g_system_state = STATE_WAIT_OBJECT;
+                    break;
+                }
+                if (g_stable_count >= STABLE_COUNT)
+                {
+                    measured_weight = g_stable_weight;
+
+                    /* 플래그 방향 결정 */
+                    if (measured_weight >= CLASSIFY_HEAVY_G)
+                    {
+                        Flag_SetLeft();
+                        cliPrintf("[SYS] 무거운 물체 %.2f g -> FLAG LEFT\r\n", measured_weight);
+                    }
+                    else
+                    {
+                        Flag_SetRight();
+                        cliPrintf("[SYS] 가벼운 물체 %.2f g -> FLAG RIGHT\r\n", measured_weight);
+                    }
+
+                    /* 로봇팔 시작 트리거 */
+                    arm_running    = true;
+                    g_system_state = STATE_ARM_MOVING;
+                    cliPrintf("[SYS] -> ARM_MOVING\r\n");
+                }
+                break;
+
+            /* ── 로봇팔 완료 대기 — 세마포어 수신 ───────── */
+            case STATE_ARM_MOVING:
+                /* 블로킹 대기 — 팔 완료될 때까지 이 태스크 sleep */
+                osSemaphoreAcquire(g_arm_done_sem, osWaitForever);
+                Conveyor_Start(CONVEYOR_SLOW, CONVEYOR_DIR_BACKWARD);
+                conveyor_start_ms = osKernelGetTickCount();
+                g_system_state    = STATE_CONVEYOR_RUNNING;
+                cliPrintf("[SYS] 팔 완료 -> CONVEYOR_RUNNING\r\n");
+                break;
+
+            /* ── 컨베이어 동작 중 — 딜레이 후 정지 ─────── */
+            case STATE_CONVEYOR_RUNNING:
+            {
+                uint32_t elapsed = osKernelGetTickCount() - conveyor_start_ms;
+                if (elapsed >= CONVEYOR_RUN_MS)
+                {
+                    Conveyor_Stop();
+                    Flag_SetCenter();
+                    g_system_state = STATE_DONE;
+                    cliPrintf("[SYS] 컨베이어 정지 -> DONE\r\n");
+                }
+                break;
+            }
+
+            /* ── 분류 완료 — 초기화 후 대기로 복귀 ─────── */
+            case STATE_DONE:
+                measured_weight   = 0.0f;
+                conveyor_start_ms = 0;
+                g_system_state    = STATE_WAIT_OBJECT;
+                cliPrintf("[SYS] -> WAIT_OBJECT\r\n");
+                break;
+
+            default:
+                g_system_state = STATE_WAIT_OBJECT;
+                break;
+        }
+
+        osDelay(50);
+    }
+}
 
 void robotArmTask(void) {
-    if (!arm_running) return;
-    
-// 1. 집게 열고
+
+// // 1. 집게 열고
     pca9685SetAngleSmoothDual(0, 0, 1, 0, 1500);
     if (!arm_running) return;
 
@@ -348,11 +496,11 @@ void robotArmTask(void) {
     if (!arm_running) return;
     
     // 3. 팔 내리고
-    pca9685SetAngleSmooth(3, 140, 1500);
+    pca9685SetAngleSmooth(3, 170, 1500);
     if (!arm_running) return;
 
     // 4. 어깨 내리고
-    pca9685SetAngleSmooth(4, 0, 1500);
+    pca9685SetAngleSmooth(4, 25, 1500);
     if (!arm_running) return;
 
     // 5. 집게 닫고
@@ -364,18 +512,18 @@ void robotArmTask(void) {
     if (!arm_running) return;
 
     // 7. 허리 돌리고
-    pca9685SetAngleSmooth(5, 140, 1500);
+    pca9685SetAngleSmooth(5, 90, 1500);
     if (!arm_running) return;
 
     // 8. 어깨 내리고
-    pca9685SetAngleSmooth(4, 0, 1500);
+    pca9685SetAngleSmooth(4, 55, 1500);
     if (!arm_running) return;
 
     // 9. 집게 열고
     pca9685SetAngleSmoothDual(0, 0, 1, 0, 1500);
 
     // 10. 허리 원위치
-    pca9685SetAngleSmooth(5, 55, 1500);
+    pca9685SetAngleSmooth(5, 0, 1500);
 }
 
 void cliArm(uint8_t argc, char **argv) {
@@ -719,19 +867,82 @@ void apSyncPeriods(uint32_t period){
   }
 }
 
-void armSystemTask(void *argument) {
-  LOG_INF("armSystemTask started!");
-  while (1) {
-    if (arm_running) {
-      LOG_INF("arm running!");
-      robotArmTask();
-    } else {
-      osDelay(50);
+void armSystemTask(void *argument)
+{
+    LOG_INF("armSystemTask started!");
+    while (1)
+    {
+        if (arm_running)
+        {
+            cliPrintf("[ARM] 시퀀스 시작\r\n");
+            robotArmTask();
+            arm_running = false;
+
+            /* 시퀀스 완료 → systemTask에 세마포어 신호 */
+            if (g_arm_done_sem != NULL)
+            {
+                osSemaphoreRelease(g_arm_done_sem);
+                cliPrintf("[ARM] 시퀀스 완료 — 세마포어 release\r\n");
+            }
+            else
+            {
+                cliPrintf("[ARM] 경고: g_arm_done_sem NULL\r\n");
+            }
+        }
+        else
+        {
+            osDelay(50);
+        }
     }
-  }
 }
 
-void apInit(void)
+/* ── CLI: system ─────────────────────────────────────────── */
+void cliSystem(uint8_t argc, char **argv)
+{
+    if (argc < 2)
+    {
+        cliPrintf("Usage: system on\r\n");
+        cliPrintf("       system off\r\n");
+        cliPrintf("       system status\r\n");
+        return;
+    }
+
+    if (strcmp(argv[1], "on") == 0)
+    {
+        if (g_system_enabled)
+        {
+            cliPrintf("[SYS] 이미 동작 중\r\n");
+            return;
+        }
+        g_system_enabled = true;
+        g_system_state   = STATE_IDLE;  /* systemTask 루프에서 WAIT_OBJECT로 전환 */
+        cliPrintf("[SYS] 시스템 ON\r\n");
+    }
+    else if (strcmp(argv[1], "off") == 0)
+    {
+        g_system_enabled = false;
+        arm_running      = false;
+        Conveyor_Stop();
+        Flag_SetCenter();
+        cliPrintf("[SYS] 시스템 OFF — 컨베이어/팔 정지\r\n");
+    }
+    else if (strcmp(argv[1], "status") == 0)
+    {
+        const char *state_str[] = {
+            "WAIT_OBJECT", "MEASURING", "ARM_MOVING",
+            "CONVEYOR_RUNNING", "DONE", "IDLE"
+        };
+        cliPrintf("[SYS] enabled=%s  state=%s\r\n",
+                  g_system_enabled ? "ON" : "OFF",
+                  state_str[g_system_state]);
+    }
+    else
+    {
+        cliPrintf("Usage: system [on|off|status]\r\n");
+    }
+}
+
+void apInit()
 {
   hwInit();
   LOG_INF("Application Init... Started");
@@ -739,6 +950,9 @@ void apInit(void)
   logInit();
   monitorInit();
   Conveyor_Init();
+
+  /* 세마포어 생성 — 로봇팔 완료 트리거용 */
+  g_arm_done_sem = osSemaphoreNew(1, 0, NULL);
 
   monitorSetSyncHandler(apSyncPeriods);
   cliSetCtrlHandler(apStopAutoTask);
@@ -753,18 +967,21 @@ void apInit(void)
   cliAdd("arm",       cliArm);
   cliAdd("conv",      cliConveyor);
   cliAdd("loadcell",  cliLoadCell);   /* ← LoadCell CLI 추가 */
-  cliAdd("flag", cliFlag);
+  cliAdd("flag",      cliFlag);
+  cliAdd("system",    cliSystem);     /* ← 시스템 on/off */
 
   if (pca9685Init() == true)
       LOG_INF("PCA9685 Init OK");
   else
       LOG_INF("PCA9685 Init FAIL");
 
-      extern osThreadId_t myTaskArmHandle;
+  extern osThreadId_t myTaskArmHandle;
   if (myTaskArmHandle != NULL)
       LOG_INF("Arm task handle OK");
   else
       LOG_INF("Arm task handle NULL - creation FAILED");
+
+  LOG_INF("systemTask — CubeMX freertos.c에서 생성됨");
 }
 
 void apMain(void)

@@ -105,5 +105,5 @@ int32_t hx711Read(void)
     else
         result = (int32_t)raw;
 
-    return result / 10;
+    return result;
 }
