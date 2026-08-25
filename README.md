@@ -104,6 +104,7 @@ OBJECT_RELEASE_G 이하 → 물체 이탈 (대기 복귀)
 ### 📡 원격 모니터링 (텔레메트리)
 - UART CLI를 통해 실시간 무게, 온도, LED 상태, 공정 상태 스트리밍
 - GUI 모니터링 프로그램 연동 지원
+- QT creator로 GUI와 UART CLI 연동
 
 ---
 
